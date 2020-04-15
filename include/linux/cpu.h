@@ -120,6 +120,8 @@ enum {
 #define CPU_BROKEN		0x000C /* CPU (unsigned)v did not die properly,
 					* perhaps due to preemption. */
 
+#define CPU_DOWN_LATE_PREPARE	0x000D
+
 /* Used for CPU hotplug events occurring while tasks are frozen due to a suspend
  * operation in progress
  */
@@ -134,6 +136,8 @@ enum {
 #define CPU_DYING_FROZEN	(CPU_DYING | CPU_TASKS_FROZEN)
 #define CPU_STARTING_FROZEN	(CPU_STARTING | CPU_TASKS_FROZEN)
 
+#define CPUS_UP_PREPARE			0x0001
+#define CPUS_DOWN_COMPLETE		0x0002
 
 #ifdef CONFIG_SMP
 /* Need to know about CPUs going up/down? */
