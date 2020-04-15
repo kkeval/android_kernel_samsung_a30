@@ -3308,4 +3308,22 @@ static inline unsigned long rlimit_max(unsigned int limit)
 	return task_rlimit_max(current, limit);
 }
 
+#ifdef CONFIG_CPU_FREQ
+struct update_util_data {
+	void (*func)(struct update_util_data *data,
+		     u64 time, unsigned long util, unsigned long max);
+};
+
+void cpufreq_add_update_util_hook(int cpu, struct update_util_data *data,
+			void (*func)(struct update_util_data *data, u64 time,
+				     unsigned long util, unsigned long max));
+void cpufreq_remove_update_util_hook(int cpu);
+#endif /* CONFIG_CPU_FREQ */
+
+#ifdef CONFIG_SCHED_HP_EVENT
+void hp_event_update(struct sched_entity *se);
+#else
+static inline void hp_event_update(struct sched_entity *se) { }
+#endif
+
 #endif
