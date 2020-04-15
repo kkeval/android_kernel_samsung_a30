@@ -1053,6 +1053,24 @@ struct sched_domain_attr {
 
 extern int sched_domain_level_max;
 
+struct capacity_state {
+       unsigned long cap;      /* compute capacity */
+       unsigned long power;    /* power consumption at this compute capacity */
+};
+
+struct idle_state {
+       unsigned long power;     /* power consumption in this idle state */
+};
+
+struct sched_group_energy {
+       unsigned int nr_idle_states;    /* number of idle states */
+       struct idle_state *idle_states; /* ptr to idle state array */
+       unsigned int nr_cap_states;     /* number of capacity states */
+       struct capacity_state *cap_states; /* ptr to capacity state array */
+};
+
+unsigned long capacity_curr_of(int cpu);
+
 struct sched_group;
 
 struct sched_domain {
@@ -1565,6 +1583,7 @@ struct task_struct {
 
 	cputime_t utime, stime, utimescaled, stimescaled;
 	cputime_t gtime;
+	unsigned long long cpu_power;
 	struct prev_cputime prev_cputime;
 #ifdef CONFIG_VIRT_CPU_ACCOUNTING_GEN
 	seqlock_t vtime_seqlock;
@@ -2687,7 +2706,14 @@ static inline int copy_thread_tls(
 }
 #endif
 extern void flush_thread(void);
-extern void exit_thread(void);
+
+#ifdef CONFIG_HAVE_EXIT_THREAD
+extern void exit_thread(struct task_struct *tsk);
+#else
+static inline void exit_thread(struct task_struct *tsk)
+{
+}
+#endif
 
 extern void exit_files(struct task_struct *);
 extern void __cleanup_sighand(struct sighand_struct *);
