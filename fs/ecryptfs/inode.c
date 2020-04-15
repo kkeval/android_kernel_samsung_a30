@@ -522,12 +522,13 @@ static int ecryptfs_lookup_interpose(struct dentry *dentry,
 	 * ecryptfs_lookup() anyway.  Just need to be careful and fetch
 	 * ->d_inode only once - it's not stable here.
 	 */
-	lower_inode = READ_ONCE(lower_dentry->d_inode);
+		lower_inode = READ_ONCE(lower_dentry->d_inode);
 
-	if (!lower_inode) {
-		/* We want to add because we couldn't find in lower */
-		d_add(dentry, NULL);
-		return 0;
+		if (!lower_inode) {
+			/* We want to add because we couldn't find in lower */
+			d_add(dentry, NULL);
+			return 0;
+		}
 	}
 	inode = __ecryptfs_get_inode(lower_inode, dir_inode->i_sb);
 	if (IS_ERR(inode)) {
