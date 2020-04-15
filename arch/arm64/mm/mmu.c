@@ -71,6 +71,47 @@ extern int boot_mode_security;
 unsigned long empty_zero_page[PAGE_SIZE / sizeof(unsigned long)] __page_aligned_rkp_bss;
 EXPORT_SYMBOL(empty_zero_page);
 
+int pud_set_huge(pud_t *pud, phys_addr_t phys, pgprot_t prot)
+{
+	BUG_ON(phys & ~PUD_MASK);
+	set_pud(pud, __pud(phys | PUD_TYPE_SECT | pgprot_val(mk_sect_prot(prot))));
+	return 1;
+}
+
+int pmd_set_huge(pmd_t *pmd, phys_addr_t phys, pgprot_t prot)
+{
+	BUG_ON(phys & ~PMD_MASK);
+	set_pmd(pmd, __pmd(phys | PMD_TYPE_SECT | pgprot_val(mk_sect_prot(prot))));
+	return 1;
+}
+
+int pud_clear_huge(pud_t *pud)
+{
+	if (!pud_sect(*pud))
+		return 0;
+	pud_clear(pud);
+	return 1;
+}
+
+int pmd_clear_huge(pmd_t *pmd)
+{
+	if (!pmd_sect(*pmd))
+		return 0;
+	pmd_clear(pmd);
+	return 1;
+}
+
+#ifdef CONFIG_HAVE_ARCH_HUGE_VMAP
+int pud_free_pmd_page(pud_t *pud, unsigned long addr)
+{
+	return pud_none(*pud);
+}
+
+int pmd_free_pte_page(pmd_t *pmd, unsigned long addr)
+{
+	return pmd_none(*pmd);
+}
+
 static pte_t bm_pte[PTRS_PER_PTE] __page_aligned_rkp_bss;
 static pmd_t bm_pmd[PTRS_PER_PMD] __page_aligned_rkp_bss __maybe_unused;
 static pud_t bm_pud[PTRS_PER_PUD] __page_aligned_rkp_bss __maybe_unused;
@@ -265,7 +306,7 @@ static void alloc_init_pmd(pud_t *pud, unsigned long addr, unsigned long end,
 		/* try section mapping first */
 		if (((addr | next | phys) & ~SECTION_MASK) == 0 &&
 		      block_mappings_allowed(pgtable_alloc)) {
-			pmd_t old_pmd =*pmd;
+			pmd_t old_pmd = *pmd;
 			pmd_set_huge(pmd, phys, prot);
 			/*
 			 * Check for previous table entries created during
@@ -964,46 +1005,5 @@ int __init arch_ioremap_pud_supported(void)
 int __init arch_ioremap_pmd_supported(void)
 {
 	return 1;
-}
-
-int pud_set_huge(pud_t *pud, phys_addr_t phys, pgprot_t prot)
-{
-	BUG_ON(phys & ~PUD_MASK);
-	set_pud(pud, __pud(phys | PUD_TYPE_SECT | pgprot_val(mk_sect_prot(prot))));
-	return 1;
-}
-
-int pmd_set_huge(pmd_t *pmd, phys_addr_t phys, pgprot_t prot)
-{
-	BUG_ON(phys & ~PMD_MASK);
-	set_pmd(pmd, __pmd(phys | PMD_TYPE_SECT | pgprot_val(mk_sect_prot(prot))));
-	return 1;
-}
-
-int pud_clear_huge(pud_t *pud)
-{
-	if (!pud_sect(*pud))
-		return 0;
-	pud_clear(pud);
-	return 1;
-}
-
-int pmd_clear_huge(pmd_t *pmd)
-{
-	if (!pmd_sect(*pmd))
-		return 0;
-	pmd_clear(pmd);
-	return 1;
-}
-
-#ifdef CONFIG_HAVE_ARCH_HUGE_VMAP
-int pud_free_pmd_page(pud_t *pud, unsigned long addr)
-{
-	return pud_none(*pud);
-}
-
-int pmd_free_pte_page(pmd_t *pmd, unsigned long addr)
-{
-	return pmd_none(*pmd);
 }
 #endif
