@@ -1288,6 +1288,11 @@ struct sched_avg {
 	u64 last_update_time, load_sum;
 	u32 util_sum, period_contrib;
 	unsigned long load_avg, util_avg;
+#ifdef CONFIG_SCHED_HMP
+	u64 hmp_load_sum, hmp_load_avg;
+	u64 hmp_last_up_migration;
+	u64 hmp_last_down_migration;
+#endif
 };
 
 #ifdef CONFIG_SCHEDSTATS
