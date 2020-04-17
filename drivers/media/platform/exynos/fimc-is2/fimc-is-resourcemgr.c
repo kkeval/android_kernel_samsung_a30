@@ -712,7 +712,7 @@ static int __init fimc_is_lib_mem_map(void)
 	return 0;
 }
 
-static int __init fimc_is_heap_mem_map(struct fimc_is_resourcemgr *resourcemgr,
+static int fimc_is_heap_mem_map(struct fimc_is_resourcemgr *resourcemgr,
 	struct vm_struct *vm, int heap_size)
 {
 	struct fimc_is_mem *mem = &resourcemgr->mem;
