@@ -255,3 +255,4 @@ fi
 
 # We made a new kernel - delete old version file
 rm -f .old_version
+
