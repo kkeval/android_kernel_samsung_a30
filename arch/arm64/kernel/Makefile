@@ -11,13 +11,14 @@ CFLAGS_REMOVE_insn.o = -pg
 CFLAGS_REMOVE_return_address.o = -pg
 
 # Object file lists.
-arm64-obj-y		:= debug-monitors.o entry.o irq.o fpsimd.o		\
-			   entry-fpsimd.o process.o ptrace.o setup.o signal.o	\
-			   sys.o stacktrace.o time.o traps.o io.o vdso.o	\
-			   hyp-stub.o psci.o cpu_ops.o insn.o	\
-			   return_address.o cpuinfo.o cpu_errata.o		\
-			   cpufeature.o alternative.o cacheinfo.o		\
-			   smp.o smp_spin_table.o topology.o smccc-call.o
+arm64-obj-y		:= debug-monitors.o entry.o irq.o fpsimd.o \
+			   entry-fpsimd.o process.o ptrace.o setup.o signal.o \
+			   sys.o stacktrace.o time.o traps.o io.o vdso.o \
+			   hyp-stub.o psci.o cpu_ops.o insn.o \
+			   return_address.o cpuinfo.o cpu_errata.o \
+			   cpufeature.o alternative.o cacheinfo.o \
+			   ctr_el0_handler.o smp.o smp_spin_table.o \
+			   topology.o smccc-call.o
 
 extra-$(CONFIG_EFI)			:= efi-entry.o
 
@@ -55,7 +56,3 @@ obj-y					+= $(arm64-obj-y) vdso/
 obj-m					+= $(arm64-obj-m)
 head-y					:= head.o
 extra-y					+= $(head-y) vmlinux.lds
-
-# vDSO - this must be built first to generate the symbol offsets
-$(call objectify,$(arm64-obj-y)): $(obj)/vdso/vdso-offsets.h
-$(obj)/vdso/vdso-offsets.h: $(obj)/vdso
