@@ -45,12 +45,12 @@ struct sched_param {
 #include <linux/rcupdate.h>
 #include <linux/rculist.h>
 #include <linux/rtmutex.h>
-
 #include <linux/time.h>
 #include <linux/param.h>
 #include <linux/resource.h>
 #include <linux/timer.h>
 #include <linux/hrtimer.h>
+#include <linux/kcov.h>
 #include <linux/task_io_accounting.h>
 #include <linux/latencytop.h>
 #include <linux/cred.h>
@@ -227,9 +227,10 @@ extern void proc_sched_set_task(struct task_struct *p);
 #define TASK_WAKING		256
 #define TASK_PARKED		512
 #define TASK_NOLOAD		1024
-#define TASK_STATE_MAX		2048
+#define TASK_NEW               	2048
+#define TASK_STATE_MAX         	4096
 
-#define TASK_STATE_TO_CHAR_STR "RSDTtXZxKWPN"
+#define TASK_STATE_TO_CHAR_STR "RSDTtXZxKWPNn"
 
 extern char ___assert_task_state[1 - 2*!!(
 		sizeof(TASK_STATE_TO_CHAR_STR)-1 != ilog2(TASK_STATE_MAX)+1)];
@@ -321,6 +322,15 @@ extern char ___assert_task_state[1 - 2*!!(
 
 /* Task command name length */
 #define TASK_COMM_LEN 16
+
+enum task_event {
+	PUT_PREV_TASK   = 0,
+	PICK_NEXT_TASK  = 1,
+	TASK_WAKE       = 2,
+	TASK_MIGRATE    = 3,
+	TASK_UPDATE     = 4,
+	IRQ_UPDATE      = 5,
+};
 
 #include <linux/spinlock.h>
 
@@ -1000,12 +1010,13 @@ struct wake_q_node {
 struct wake_q_head {
 	struct wake_q_node *first;
 	struct wake_q_node **lastp;
+	int count;
 };
 
 #define WAKE_Q_TAIL ((struct wake_q_node *) 0x01)
 
 #define WAKE_Q(name)					\
-	struct wake_q_head name = { WAKE_Q_TAIL, &name.first }
+	struct wake_q_head name = { WAKE_Q_TAIL, &name.first, 0 }
 
 extern void wake_q_add(struct wake_q_head *head,
 		       struct task_struct *task);
@@ -1030,6 +1041,7 @@ extern void wake_up_q(struct wake_q_head *head);
 #define SD_PREFER_SIBLING	0x1000	/* Prefer to place tasks in a sibling domain */
 #define SD_OVERLAP		0x2000	/* sched_domains of this level overlap */
 #define SD_NUMA			0x4000	/* cross-node balancing */
+#define SD_SHARE_CAP_STATES    0x8000  /* Domain members share capacity state */
 #define SD_NO_LOAD_BALANCE	0x10000	/* flag for hmp scheduler */
 
 #ifdef CONFIG_SCHED_SMT
@@ -1174,7 +1186,7 @@ struct sched_domain {
 	unsigned int ttwu_wake_remote;
 	unsigned int ttwu_move_affine;
 	unsigned int ttwu_move_balance;
-	
+
 	struct eas_stats eas_stats;
 #endif
 #ifdef CONFIG_SCHED_DEBUG
@@ -1212,7 +1224,7 @@ bool cpus_share_cache(int this_cpu, int that_cpu);
 
 typedef const struct cpumask *(*sched_domain_mask_f)(int cpu);
 typedef int (*sched_domain_flags_f)(void);
-
+typedef const struct sched_group_energy * const(*sched_domain_energy_f)(int cpu);
 #define SDTL_OVERLAP	0x01
 
 struct sd_data {
@@ -1224,6 +1236,7 @@ struct sd_data {
 struct sched_domain_topology_level {
 	sched_domain_mask_f mask;
 	sched_domain_flags_f sd_flags;
+	sched_domain_energy_f energy;
 	int		    flags;
 	int		    numa_level;
 	struct sd_data      data;
@@ -1399,6 +1412,41 @@ struct sched_statistics {
 };
 #endif
 
+#ifdef CONFIG_SCHED_WALT
+#define RAVG_HIST_SIZE_MAX  5
+
+/* ravg represents frequency scaled cpu-demand of tasks */
+struct ravg {
+       /*
+        * 'mark_start' marks the beginning of an event (task waking up, task
+        * starting to execute, task being preempted) within a window
+        *
+        * 'sum' represents how runnable a task has been within current
+        * window. It incorporates both running time and wait time and is
+        * frequency scaled.
+        *
+        * 'sum_history' keeps track of history of 'sum' seen over previous
+        * RAVG_HIST_SIZE windows. Windows where task was entirely sleeping are
+        * ignored.
+        *
+        * 'demand' represents maximum sum seen over previous
+        * sysctl_sched_ravg_hist_size windows. 'demand' could drive frequency
+        * demand for tasks.
+        *
+        * 'curr_window' represents task's contribution to cpu busy time
+        * statistics (rq->curr_runnable_sum) in current window
+        *
+        * 'prev_window' represents task's contribution to cpu busy time
+        * statistics (rq->prev_runnable_sum) in previous window
+        */
+       u64 mark_start;
+       u32 sum, demand;
+       u32 sum_history[RAVG_HIST_SIZE_MAX];
+       u32 curr_window, prev_window;
+       u16 active_windows;
+};
+#endif
+
 struct sched_entity {
 	struct load_weight	load;		/* for load-balancing */
 	struct rb_node		run_node;
@@ -1436,6 +1484,10 @@ struct sched_rt_entity {
 	unsigned long timeout;
 	unsigned long watchdog_stamp;
 	unsigned int time_slice;
+
+	/* Accesses for these must be guarded by rq->lock of the task's rq */
+	bool schedtune_enqueued;
+	struct hrtimer schedtune_timer;
 
 	struct sched_rt_entity *back;
 #ifdef CONFIG_RT_GROUP_SCHED
@@ -1512,6 +1564,10 @@ union rcu_special {
 };
 struct rcu_node;
 
+#ifdef CONFIG_FIVE
+struct task_integrity;
+#endif
+
 enum perf_event_task_context {
 	perf_invalid_context = -1,
 	perf_hw_context = 0,
@@ -1571,6 +1627,9 @@ struct task_struct {
 	const struct sched_class *sched_class;
 	struct sched_entity se;
 	struct sched_rt_entity rt;
+#ifdef CONFIG_SCHED_USE_FLUID_RT
+	int victim_flag;
+#endif
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group *sched_task_group;
 #endif
@@ -1977,6 +2036,16 @@ struct task_struct {
 	/* bitmask and counter of trace recursion */
 	unsigned long trace_recursion;
 #endif /* CONFIG_TRACING */
+#ifdef CONFIG_KCOV
+	/* Coverage collection mode enabled for this task (0 if disabled). */
+	enum kcov_mode kcov_mode;
+	/* Size of the kcov_area. */
+	unsigned	kcov_size;
+	/* Buffer for coverage collection. */
+	void		*kcov_area;
+	/* kcov desciptor wired with this task or NULL. */
+	struct kcov	*kcov;
+#endif
 #ifdef CONFIG_MEMCG
 	struct mem_cgroup *memcg_in_oom;
 	gfp_t memcg_oom_gfp_mask;
@@ -1997,6 +2066,9 @@ struct task_struct {
 #endif
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
 	unsigned long	task_state_change;
+#endif
+#ifdef CONFIG_FIVE
+	struct task_integrity *integrity;
 #endif
 	int pagefault_disabled;
 /* CPU-specific state of this task */
@@ -2209,7 +2281,11 @@ static inline int is_global_init(struct task_struct *tsk)
 extern struct pid *cad_pid;
 
 extern void free_task(struct task_struct *tsk);
+#ifdef CONFIG_TRACE_TASK_USAGE
+#define get_task_struct(tsk) do { BUG_ON(0 == atomic_read(&(tsk)->usage)); atomic_inc(&(tsk)->usage); } while(0)
+#else
 #define get_task_struct(tsk) do { atomic_inc(&(tsk)->usage); } while(0)
+#endif
 
 extern void __put_task_struct(struct task_struct *t);
 
